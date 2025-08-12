@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>PakFit — Diet Planner</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#ff7a59">
+<link rel="icon" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', sans-serif; background: #0f1724; color: white; margin: 0; }
+  header { display:flex; justify-content:space-between; align-items:center; padding: 20px; background:#091020; }
+  .logo { width:56px; height:56px; border-radius:12px; background:#ff7a59; display:grid; place-items:center; font-weight:800; color:white; font-size:20px; }
+  .brand { display:flex; gap:12px; align-items:center; }
+  main { padding:20px; display:grid; grid-template-columns: 1fr 300px; gap:20px; }
+  .card { background:rgba(255,255,255,0.05); border-radius:12px; padding:14px; }
+  .day { padding:10px; border-radius:8px; background:rgba(255,255,255,0.05); margin-bottom:8px; cursor:pointer; }
+  .day.done { background:rgba(0,255,0,0.15); }
+  #settingsModal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; }
+  #settingsModal .modal-content { background:#091020; padding:20px; border-radius:10px; width:90%; max-width:500px; }
+  label { display:block; margin-top:10px; font-weight:600; }
+  input, textarea { width:100%; padding:6px; border-radius:6px; border:none; margin-top:4px; }
+  button { padding:8px 12px; border:none; border-radius:6px; cursor:pointer; font-weight:600; }
+  .btn-primary { background:#ff7a59; color:white; }
+  .btn-secondary { background:#555; color:white; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo">PK</div>
+    <div>
+      <h1 style="margin:0;font-size:20px;">PakFit — Diet Planner</h1>
+      <p style="margin:0; color: #ccc; font-size:13px;">6-week plan · daily follow-up · offline ready</p>
+    </div>
+  </div>
+  <button id="openSettings" class="btn-secondary">Settings</button>
+</header>
+
+<main>
+  <div>
+    <div class="card" id="todayCard">
+      <h3>Today</h3>
+      <p id="todayDesc"></p>
+      <button id="markToday" class="btn-primary">Mark Done</button>
+    </div>
+    <div class="card">
+      <h3>Schedule</h3>
+      <div id="daysList"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Progress</h3>
+    <p>Done: <span id="doneCount">0</span> / <span id="totalDays">0</span></p>
+    <button id="reset" class="btn-secondary">Reset</button>
+  </div>
+</main>
+
+<div id="settingsModal">
+  <div class="modal-content">
+    <h3>Settings</h3>
+    <label>Total Days <input type="number" id="totalDaysInput" min="1" value="42"></label>
+    <div id="mealInputs"></div>
+    <div style="margin-top:12px;">
+      <button id="saveSettings" class="btn-primary">Save</button>
+      <button id="closeSettings" class="btn-secondary">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('service-worker.js');
+}
+
+const LS_KEY = 'pakfit_plans_v2';
+const LS_MEALS_KEY = 'pakfit_meals_v2';
+const defaultMeals = {
+  beforeBreakfast: '1 glass warm water · 2 tbsp isphagol · 1 tbsp chia seeds',
+  breakfast: '1 roti (50g) · 2-3 egg whites · 7 almonds · OR 1 date',
+  afterBreakfast: '1 apple or seasonal fruit · 1 cup tea',
+  lunch: '100–150g chicken · 1 roti (50g) · 1 bowl vegetables',
+  eveningSnack: '1 banana or seasonal fruit / 2 dates · black coffee or tea',
+  dinner: '100–150g chicken · 1 roti (50g) · 1 bowl vegetables · 2–4 tbsp yogurt',
+  beforeSleep: '1 glass warm milk OR 1 glass warm water · 2 tbsp isphagol · 1 tbsp chia seeds'
+};
+
+let meals = JSON.parse(localStorage.getItem(LS_MEALS_KEY) || 'null') || {...defaultMeals};
+let totalDays = 42;
+let plans = [];
+
+function createPlans(){
+  const start = new Date();
+  const msDay = 86400000;
+  plans = [];
+  for(let i=0;i<totalDays;i++){
+    const date = new Date(start.getTime() + i*msDay);
+    plans.push({
+      id: date.toISOString().slice(0,10),
+      dateStr: date.toDateString(),
+      completed: false
+    });
+  }
+}
+
+function loadData(){
+  const savedPlans = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+  if(savedPlans && Array.isArray(savedPlans)){
+    plans = savedPlans;
+    totalDays = plans.length;
+  } else {
+    createPlans();
+  }
+}
+
+function saveData(){
+  localStorage.setItem(LS_KEY, JSON.stringify(plans));
+}
+
+function render(){
+  document.getElementById('daysList').innerHTML = '';
+  plans.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'day' + (p.completed ? ' done' : '');
+    div.textContent = p.dateStr;
+    div.onclick = () => {
+      p.completed = !p.completed;
+      saveData();
+      render();
+    };
+    document.getElementById('daysList').appendChild(div);
+  });
+  document.getElementById('doneCount').textContent = plans.filter(p=>p.completed).length;
+  document.getElementById('totalDays').textContent = totalDays;
+  const today = plans[0];
+  document.getElementById('todayDesc').textContent = Object.values(meals).join(' | ');
+  document.getElementById('markToday').onclick = () => {
+    today.completed = !today.completed;
+    saveData(); render();
+  };
+}
+
+document.getElementById('reset').onclick = () => {
+  if(confirm('Reset all progress?')){
+    createPlans();
+    saveData();
+    render();
+  }
+};
+
+// Settings modal
+const settingsModal = document.getElementById('settingsModal');
+document.getElementById('openSettings').onclick = () => {
+  document.getElementById('totalDaysInput').value = totalDays;
+  const mealsDiv = document.getElementById('mealInputs');
+  mealsDiv.innerHTML = '';
+  Object.keys(meals).forEach(k => {
+    mealsDiv.innerHTML += '<label>'+k+'<textarea data-key="'+k+'">'+meals[k]+'</textarea></label>';
+  });
+  settingsModal.style.display = 'flex';
+};
+document.getElementById('closeSettings').onclick = () => settingsModal.style.display = 'none';
+document.getElementById('saveSettings').onclick = () => {
+  totalDays = parseInt(document.getElementById('totalDaysInput').value) || 1;
+  const ta = document.querySelectorAll('#mealInputs textarea');
+  ta.forEach(t => {
+    meals[t.dataset.key] = t.value;
+  });
+  localStorage.setItem(LS_MEALS_KEY, JSON.stringify(meals));
+  createPlans();
+  saveData();
+  render();
+  settingsModal.style.display = 'none';
+};
+
+loadData();
+render();
+</script>
+</body>
+</html>
